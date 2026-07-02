@@ -1,4 +1,5 @@
-// hot-path side: fetch the fixed index blind, then range-read only the chunks a query needs
+// hot-path side: read the fixed index blind, then range-read only the chunks a query needs
+// works over any byte source — see from-url.js and from-disk.js
 import config from '../../config.js'
 import { concatBytes } from '../_lib/util.js'
 import { ByteReader } from '../_lib/bytes.js'
@@ -7,20 +8,6 @@ import { gunzip } from '../_lib/gzip.js'
 import { parseMeta, parseChunks } from '../_lib/index-format.js'
 import { normalizeQuery, matches, mayMatch } from './query.js'
 import { makeStats } from './stats.js'
-
-const fetchRange = async (url, start, end, stats) => {
-  const res = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } })
-  if (!res.ok) {
-    throw new Error(`fetch failed (${res.status}) for ${url}`)
-  }
-  const bytes = new Uint8Array(await res.arrayBuffer())
-  stats.requests += 1
-  stats.bytesFetched += bytes.length
-  if (res.status === 200) {
-    stats.hint('server ignored the range request — sent the whole file')
-  }
-  return { bytes, status: res.status }
-}
 
 // merge wanted chunk ids (ascending) into few byte ranges, jumping small gaps
 const coalesce = (ids, chunks, maxGap) => {
@@ -59,23 +46,39 @@ const decodeChunk = (blob, meta, nRows) => {
   return rows
 }
 
-export const readFile = async (url, size, opts = {}) => {
+// shared reader core — source: {read(start, end) → {bytes, whole?}, close?()}
+export const open = async (source, size, opts = {}) => {
   const cfg = { ...config, ...opts }
   const askedSize = cfg.indexSizes[size]
   if (!askedSize) {
     throw new Error(`unknown index size '${size}' — use ${Object.keys(cfg.indexSizes).join('/')}`)
   }
   const stats = makeStats()
-  const head = await fetchRange(url, 0, askedSize - 1, stats)
-  let full = head.status === 200 ? head.bytes : null // whole file, if the server can't do ranges
-  let bytes = head.bytes
+  let full = null // whole file, when a source can't do ranges
+
+  // range-read (inclusive end) with stats + whole-file fallback
+  const read = async (start, end) => {
+    if (full) {
+      return full.slice(start, end + 1)
+    }
+    const res = await source.read(start, end)
+    stats.requests += 1
+    stats.bytesFetched += res.bytes.length
+    if (res.whole) {
+      full = res.bytes
+      stats.hint('the range request was ignored — the whole file was sent')
+      return full.slice(start, end + 1)
+    }
+    return res.bytes
+  }
+
+  let bytes = await read(0, askedSize - 1)
   const meta = parseMeta(bytes)
   if (meta.size !== size) {
     stats.hint(`file has a '${meta.size}' index but was opened as '${size}' — pass '${meta.size}' to avoid wasted bytes`)
   }
   if (meta.indexSize > bytes.length) {
-    const rest = await fetchRange(url, bytes.length, meta.indexSize - 1, stats)
-    bytes = concatBytes([bytes, rest.bytes])
+    bytes = concatBytes([bytes, await read(bytes.length, meta.indexSize - 1)])
   }
   const chunks = parseChunks(bytes, meta)
   stats.chunksTotal = chunks.length
@@ -94,23 +97,16 @@ export const readFile = async (url, size, opts = {}) => {
       return
     }
     const buffers = new Map() // chunk id → compressed bytes
-    const sliceFrom = (buf, base, i) => buf.slice(chunks[i].offset - base, chunks[i].offset - base + chunks[i].byteLength)
-    if (full) {
-      need.forEach((i) => buffers.set(i, sliceFrom(full, 0, i)))
-    } else {
-      const ranges = coalesce(need, chunks, cfg.maxGapBytes)
-      await Promise.all(
-        ranges.map(async (range) => {
-          const res = await fetchRange(url, range.start, range.end, stats)
-          if (res.status === 200) {
-            full = res.bytes
-            range.ids.forEach((i) => buffers.set(i, sliceFrom(full, 0, i)))
-          } else {
-            range.ids.forEach((i) => buffers.set(i, sliceFrom(res.bytes, range.start, i)))
-          }
+    const ranges = coalesce(need, chunks, cfg.maxGapBytes)
+    await Promise.all(
+      ranges.map(async (range) => {
+        const win = await read(range.start, range.end)
+        range.ids.forEach((i) => {
+          const at = chunks[i].offset - range.start
+          buffers.set(i, win.slice(at, at + chunks[i].byteLength))
         })
-      )
-    }
+      })
+    )
     await Promise.all(
       need.map(async (i) => {
         const blob = meta.gzip ? await gunzip(buffers.get(i)) : buffers.get(i)
@@ -162,5 +158,11 @@ export const readFile = async (url, size, opts = {}) => {
     return out
   }
 
-  return { meta, get, stats: () => stats.summary() }
+  const close = async () => {
+    if (source.close) {
+      await source.close()
+    }
+  }
+
+  return { meta, get, close, stats: () => stats.summary() }
 }

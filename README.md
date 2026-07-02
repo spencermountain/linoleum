@@ -5,7 +5,7 @@ a lightweight, range-request-friendly alternative to parquet, for querying stati
 build a `.lino` file ahead of time, put it on any static host that supports http range requests (s3, most cdns), and query it from the browser — fetching only the index plus the few chunks a query actually needs. no wasm, no dependencies.
 
 ```js
-import { makeFile, readFile } from 'linoleum'
+import { makeFile, fromUrl, fromDisk } from 'linoleum'
 
 // ahead of time (node)
 const lino = makeFile()
@@ -20,9 +20,13 @@ fs.writeFileSync('data-md.lino', bytes)
 console.log(lino.report) // chunks, index headroom, suggested size
 
 // on the hot path (browser or node)
-const db = await readFile(url, 'md') // one blind range request for the index
+const db = await fromUrl(url, 'md') // one blind range request for the index
 const matches = await db.get({ city: 'denver', temp: { $gte: 20 } })
 console.log(db.stats()) // bytes fetched, chunks skipped, schema-design hints
+
+// or straight off disk in node — same reader, same analytics
+const local = await fromDisk('./data-md.lino', 'md')
+await local.close() // releases the file handle
 ```
 
 ## how it works
@@ -57,7 +61,7 @@ types: `boolean`, `number`, `string` — any column may hold `null`.
 
 schema order decides everything. the first column gets fully-sorted, maximally-prunable zone maps; later columns get progressively fuzzier ones. `db.stats().hints` tells you when a column's min/max pruned nothing, when `$ne` or a non-indexed column forced a scan, and `lino.report.index.suggested` tells you when a smaller index size would fit.
 
-tunables live in [config.js](config.js) and can be overridden per call: `makeFile({ stringPrefixLen: 16 })`, `readFile(url, 'md', { maxGapBytes: 0 })`.
+tunables live in [config.js](config.js) and can be overridden per call: `makeFile({ stringPrefixLen: 16 })`, `fromUrl(url, 'md', { maxGapBytes: 0 })`.
 
 ## caveats
 
