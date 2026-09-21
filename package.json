@@ -9,10 +9,11 @@
     "lint": "eslint ."
   },
   "keywords": [],
-  "author": "",
+  "author": "Spencer Kelly <spencermountain@gmail.com> (https://spencermountain.dev)",
   "devDependencies": {
     "eslint": "10.11.0"
   },
   "license": "MIT",
-  "type": "module"
+  "type": "module",
+  "repository": "github:spencermountain/linoleum"
 }
