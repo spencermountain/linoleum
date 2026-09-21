@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 // per-column encoding — one small blob per column per chunk
 // layout: [u8 encoding][u8 hasNulls][presence bitmap?][payload of dense non-null values]
 import { ByteWriter, ByteReader } from './bytes.js'

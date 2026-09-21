@@ -1,14 +1,18 @@
 {
   "name": "linoleum",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.0.1",
+  "description": "cheaper parquet alternative",
   "main": "src/index.js",
   "scripts": {
     "watch": "node scratch.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lint": "eslint ."
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "devDependencies": {
+    "eslint": "10.11.0"
+  },
+  "license": "MIT",
   "type": "module"
 }

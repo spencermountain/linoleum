@@ -109,6 +109,7 @@ export const parseChunks = (bytes, meta) => {
         continue
       }
       const flags = r.u8()
+      // eslint-disable-next-line no-bitwise
       const s = { hasNonNull: (flags & 1) !== 0, hasNull: (flags & 2) !== 0 }
       if (col.type === 'boolean') {
         s.min = r.u8() === 1
