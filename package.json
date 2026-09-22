@@ -2,18 +2,18 @@
   "name": "linoleum",
   "version": "0.0.1",
   "description": "cheaper parquet alternative",
-  "main": "src/index.js",
+  "license": "MIT",
+  "repository": "github:spencermountain/linoleum",
+  "author": "Spencer Kelly <spencermountain@gmail.com> (https://spencermountain.dev)",
+  "type": "module",
+  "main": "./src/index.js",
+  "sideEffects": false,
   "scripts": {
     "watch": "node scratch.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
     "lint": "eslint ."
   },
   "keywords": [],
-  "author": "Spencer Kelly <spencermountain@gmail.com> (https://spencermountain.dev)",
   "devDependencies": {
     "eslint": "10.11.0"
-  },
-  "license": "MIT",
-  "type": "module",
-  "repository": "github:spencermountain/linoleum"
+  }
 }
